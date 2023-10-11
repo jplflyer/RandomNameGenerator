@@ -5,10 +5,10 @@ TEMPLATE = lib
 CONFIG += staticlib
 CONFIG += c++17
 
-INCLUDEPATH += /usr/local/include
 INCLUDEPATH += src
 
 SOURCES += \
+    src/NameGen.cpp \
     src/RandomNameGenerator.cpp
 
 HEADERS += \

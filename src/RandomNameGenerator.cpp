@@ -1,4 +1,10 @@
+#include <algorithm>
+#include <exception>
+
 #include <magic_enum/magic_enum.hpp>
+
+#include <faker/Number.h>
+
 #include <showlib/CommonUsing.h>
 #include <showlib/FileUtilities.h>
 #include <showlib/StringUtils.h>
@@ -9,20 +15,20 @@
 /**
  * Default constructor. You'll need to have a different way of loading the arrays.
  */
-RandomNameGenerator::RandomNameGenerator() {
+RNG::RandomNameGenerator::RandomNameGenerator() {
 }
 
 /**
  * Load from this file.
  */
-RandomNameGenerator::RandomNameGenerator(const string &fileName) {
+RNG::RandomNameGenerator::RandomNameGenerator(const string &fileName) {
     load(fileName);
 }
 
 /**
  * Load this file.
  */
-void RandomNameGenerator::load(const string &filename) {
+void RNG::RandomNameGenerator::load(const string &filename) {
     if (filename.empty()) {
         return;
     }
@@ -115,7 +121,7 @@ void RandomNameGenerator::load(const string &filename) {
 /**
  * Is the data safe?
  */
-bool RandomNameGenerator::validate() {
+bool RNG::RandomNameGenerator::validate() {
     bool retVal = true;
 
     if (prefixes.empty()) {
@@ -140,31 +146,96 @@ bool RandomNameGenerator::validate() {
     return retVal;
 }
 
+/**
+ * Generate a name. If numberofSyllables == 0, we'll select a value centered on 4.
+ */
+string RNG::RandomNameGenerator::compose(int numberOfSyllables) {
+    string retVal;
+
+    if (numberOfSyllables == 0) {
+        // A number [1..8] centered on 4. I'm not sure if
+        // the min and max are necessary, but in case the Faker::Number::normal()
+        // method produces value outside our range, I'm leaving those in.
+        numberOfSyllables = std::min(8, std::max(1, static_cast<int>( Faker::Number::normal( 4.0, 1.5 ) ) ) );
+    }
+
+    //----------------------------------------------------------------------
+    // These shouldn't happen, but they could.
+    //----------------------------------------------------------------------
+    if (prefixes.empty()) {
+        throw RNG::ConfigException("RNG::RandomNameGenerator has no prefixes");
+    }
+    if (numberOfSyllables > 2 && middles.empty()) {
+        throw RNG::ConfigException("RNG::RandomNameGenerator has no middles");
+    }
+    if (numberOfSyllables > 1 && suffixes.empty()) {
+        throw RNG::ConfigException("RNG::RandomNameGenerator has no suffixes");
+    }
+
+    //----------------------------------------------------------------------
+    // Grab the prefix.
+    //----------------------------------------------------------------------
+    Syllable::Vector syls;
+    Syllable::Pointer prefix = pickOne(prefixes);
+    Syllable::Pointer last = prefix;
+    syls.push_back(prefix);
+
+    //----------------------------------------------------------------------
+    // Do the middles.
+    //----------------------------------------------------------------------
+    int middleCount = numberOfSyllables - 2;
+    for (int index = 0; index < middleCount; ++index) {
+        last = pickOne(last->makeFollowing(middles));
+        syls.push_back(last);
+    }
+
+    //----------------------------------------------------------------------
+    // And the suffix.
+    //----------------------------------------------------------------------
+    if (numberOfSyllables > 1) {
+        last = pickOne(last->makeFollowing(suffixes));
+        syls.push_back(last);
+    }
+
+    //----------------------------------------------------------------------
+    // Assemble into a return value.
+    //----------------------------------------------------------------------
+
+    return retVal;
+}
+
+/**
+ * Randomly pick one.
+ */
+RNG::Syllable::Pointer RNG::RandomNameGenerator::pickOne(const Syllable::Vector & from) {
+    return from[ Faker::Number::between(0, from.size() - 1) ];
+}
+
 //======================================================================
 // Conversions for our enums.
 //======================================================================
-std::string syllableTypeToString( RandomNameGenerator::SyllableType st) {
+std::string syllableTypeToString( RNG::SyllableType st) {
     std::string_view rv = magic_enum::enum_name(st);
     return {rv.data(), rv.size()};
 }
 
-std::string frequencyToString( RandomNameGenerator::Frequency type) {
+std::string frequencyToString( RNG::Frequency type) {
     std::string_view rv = magic_enum::enum_name(type);
     return {rv.data(), rv.size()};
 }
 
-RandomNameGenerator::SyllableType toSyllableType(const std::string &str) {
-    RandomNameGenerator::SyllableType rv = RandomNameGenerator::SyllableType::Middle;
-    auto value = magic_enum::enum_cast<RandomNameGenerator::SyllableType>(str);
+RNG::SyllableType toSyllableType(const std::string &str) {
+    RNG::SyllableType rv = RNG::SyllableType::Middle;
+    auto value = magic_enum::enum_cast<RNG::SyllableType>(str);
     if (value.has_value()) {
         rv = value.value();
     }
     return rv;
 }
 
-RandomNameGenerator::Frequency toFrequency(const std::string &str) {
-    RandomNameGenerator::Frequency rv = RandomNameGenerator::Frequency::Never;
-    auto value = magic_enum::enum_cast<RandomNameGenerator::Frequency>(str);
+RNG::Frequency toFrequency(const std::string &str) {
+    RNG::Frequency rv = RNG::Frequency::Never;
+    auto value = magic_enum::enum_cast<RNG::Frequency>(str);
     if (value.has_value()) {
         rv = value.value();
     }
@@ -178,7 +249,7 @@ RandomNameGenerator::Frequency toFrequency(const std::string &str) {
 /**
  * Construct with a string.
  */
-RandomNameGenerator::Syllable::Syllable(const std::string & str)
+RNG::Syllable::Syllable(const std::string & str)
     : text(str)
 {
 }
@@ -186,9 +257,9 @@ RandomNameGenerator::Syllable::Syllable(const std::string & str)
 /**
  * This form is once we're parsed.
  */
-RandomNameGenerator::Syllable::Syllable(
+RNG::Syllable::Syllable(
     const std::string & str,
-    SyllableType typeIn,
+    RNG::SyllableType typeIn,
     bool prevVowel,
     bool prevConsonant,
     bool nextVowel,
@@ -205,7 +276,7 @@ RandomNameGenerator::Syllable::Syllable(
 /**
  * Populate from JSON.
  */
-void RandomNameGenerator::Syllable::fromJSON(const JSON &json) {
+void RNG::Syllable::fromJSON(const JSON &json) {
     text = stringValue(json, "text");
     type = toSyllableType(stringValue(json, "type"));
 
@@ -218,7 +289,7 @@ void RandomNameGenerator::Syllable::fromJSON(const JSON &json) {
 /**
  * Return our JSON representation.
  */
-JSON RandomNameGenerator::Syllable::toJSON() const {
+JSON RNG::Syllable::toJSON() const {
     JSON json = JSON::object();
 
     json["text"] = text;
@@ -234,7 +305,7 @@ JSON RandomNameGenerator::Syllable::toJSON() const {
 /**
  * Return a list of syllables that can follow this one.
  */
-RandomNameGenerator::Syllable::Vector RandomNameGenerator::Syllable::makeFollowing(const RandomNameGenerator::Syllable::Vector &vec) {
+RNG::Syllable::Vector RNG::Syllable::makeFollowing(const RNG::Syllable::Vector &vec) {
     Vector retVal;
     bool vowel = endsInVowel();
     bool consonant = endsInConsonant();
@@ -263,7 +334,7 @@ RandomNameGenerator::Syllable::Vector RandomNameGenerator::Syllable::makeFollowi
 /**
  * Apply this syllable.
  */
-void RandomNameGenerator::RuleExists::apply(const Syllable &syl) {
+void RNG::RuleExists::apply(const RNG::Syllable &syl) {
     //----------------------------------------------------------------------
     // Handle any rules we have for our previous syllable
     //----------------------------------------------------------------------
@@ -301,7 +372,7 @@ void RandomNameGenerator::RuleExists::apply(const Syllable &syl) {
  * We only validate that we can find something to follow us. It may be there are following choices
  * that can't be used because the rules just don't work. We don't care.
  */
-bool RandomNameGenerator::RuleExists::validate(const RandomNameGenerator::RuleExists &followingRuleSet) const {
+bool RNG::RuleExists::validate(const RNG::RuleExists &followingRuleSet) const {
     bool retVal = true;
 
     if (forNext_Consonant_ReqVowel) {
